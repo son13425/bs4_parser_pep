@@ -1,29 +1,29 @@
-from ast import Return
 import logging
 import re
+from collections import Counter
+from urllib.parse import urljoin
+
 import requests_cache
 from bs4 import BeautifulSoup
+from tqdm import tqdm
+
 from configs import configure_argument_parser, configure_logging
 from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, PEP_DOC_URL
 from outputs import control_output
-from tqdm import tqdm
-from urllib.parse import urljoin
-from utils import get_response, find_tag
-from collections import Counter
-from prettytable import PrettyTable
+from utils import find_tag, get_response
 
 
 def whats_new(session):
-    # Вместо константы WHATS_NEW_URL, используйте переменную whats_new_url.
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     response = get_response(session, whats_new_url)
     if response is None:
-        # Если основная страница не загрузится, программа закончит работу.
         return
     soup = BeautifulSoup(response.text, features='lxml')
     main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
     div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
-    sections_by_python = div_with_ul.find_all('li', attrs={'class': 'toctree-l1'})
+    sections_by_python = div_with_ul.find_all(
+        'li', attrs={'class': 'toctree-l1'}
+    )
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
     for section in tqdm(sections_by_python):
         version_a_tag = find_tag(section, 'a')
@@ -31,7 +31,6 @@ def whats_new(session):
         version_link = urljoin(whats_new_url, href)
         response = get_response(session, version_link)
         if response is None:
-            # Если страница не загрузится, программа перейдёт к следующей ссылке.
             continue
         soup = BeautifulSoup(response.text, features='lxml')
         h1 = find_tag(soup, 'h1')
@@ -69,7 +68,6 @@ def latest_versions(session):
 
 
 def download(session):
-    # Вместо константы DOWNLOADS_URL, используйте переменную downloads_url.
     downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
     response = get_response(session, downloads_url)
     if response is None:
@@ -77,7 +75,9 @@ def download(session):
     soup = BeautifulSoup(response.text, features='lxml')
     main_tag = find_tag(soup, 'div', {'role': 'main'})
     table_tag = find_tag(main_tag, 'table', {'class': 'docutils'})
-    pdf_a4_tag = find_tag(table_tag, 'a', {'href': re.compile(r'.+pdf-a4\.zip$')})
+    pdf_a4_tag = find_tag(
+        table_tag, 'a', {'href': re.compile(r'.+pdf-a4\.zip$')}
+    )
     pdf_a4_link = pdf_a4_tag['href']
     archive_url = urljoin(downloads_url, pdf_a4_link)
     filename = archive_url.split('/')[-1]
@@ -98,15 +98,15 @@ def pep(session):
     main_table = find_tag(soup, 'section',
                           attrs={'id': 'numerical-index'})
     body_table = find_tag(main_table, 'tbody')
-    row = body_table.find_all('tr')  # В таблице нахожу все строки
+    row = body_table.find_all('tr')
     count_status = Counter()
     unexpected_statuses = []
     total = 0
-    for column in row:  # в каждой строке просматриваю колонки
-        td_tag = find_tag(column, 'td')  # в первом теге td находится статус
-        a_tag = find_tag(column, 'a')  # в первом теге <а> находится ссылка
-        link = a_tag['href']  # находим ссылку
-        status = td_tag.text[1:]  # находим ожидаемый статус
+    for column in row:
+        td_tag = find_tag(column, 'td')
+        a_tag = find_tag(column, 'a')
+        link = a_tag['href']
+        status = td_tag.text[1:]
         try:
             expected_statuses = EXPECTED_STATUS[status]
         except KeyError:
@@ -120,7 +120,9 @@ def pep(session):
             return
         soup = BeautifulSoup(response.text, 'lxml')
         table = find_tag(soup, 'dl', {'class': 'rfc2822 field-list simple'})
-        new_status = table.find(string='Status').parent.find_next_sibling('dd').string
+        new_status = (
+            table.find(string='Status').parent.find_next_sibling('dd').string
+        )
         count_status[new_status] += 1
         total += 1
         if new_status not in expected_statuses:
@@ -143,33 +145,22 @@ MODE_TO_FUNCTION = {
     'pep': pep,
 }
 
+
 def main():
-    # Запускаем функцию с конфигурацией логов.
     configure_logging()
-    # Отмечаем в логах момент запуска программы.
     logging.info('Парсер запущен!')
-    # Конфигурация парсера аргументов командной строки —
-    # передача в функцию допустимых вариантов выбора.
     arg_parser = configure_argument_parser(MODE_TO_FUNCTION.keys())
-    # Считывание аргументов из командной строки.
     args = arg_parser.parse_args()
-    # Логируем переданные аргументы командной строки.
     logging.info(f'Аргументы командной строки: {args}')
     session = requests_cache.CachedSession()
-    # Если был передан ключ '--clear-cache', то args.clear_cache == True.
     if args.clear_cache:
-        # Очистка кеша.
         session.cache.clear()
-    # Получение из аргументов командной строки нужного режима работы.
     parser_mode = args.mode
-    # Поиск и вызов нужной функции по ключу словаря.
     results = MODE_TO_FUNCTION[parser_mode](session)
-    # Если из функции вернулись какие-то результаты,
     if results is not None:
-        # передаём их в функцию вывода вместе с аргументами командной строки.
         control_output(results, args)
-    # Логируем завершение работы парсера.
     logging.info('Парсер завершил работу.')
+
 
 if __name__ == '__main__':
     main()
