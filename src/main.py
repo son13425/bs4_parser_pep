@@ -102,7 +102,7 @@ def pep(session):
     count_status = Counter()
     unexpected_statuses = []
     total = 0
-    for column in row:
+    for column in tqdm(row):
         td_tag = find_tag(column, 'td')
         a_tag = find_tag(column, 'a')
         link = a_tag['href']
